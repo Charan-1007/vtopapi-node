@@ -1,4 +1,10 @@
 {
+  "name": "vtopapi-node",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node app.js",
+    "postinstall": "npx playwright install --with-deps"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
