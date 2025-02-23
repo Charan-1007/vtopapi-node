@@ -27,7 +27,6 @@ const USER_AGENT_STRINGS = [
 // Launch browser instance once at startup
 let browserPromise = chromium.launch({ headless: true });
 
-// Execute injected JavaScript, optionally replacing semId
 const executeJavascript = async (page, script, semId = null) => {
   if (semId) {
     script = script.replace(/\bsemId\b/g, `'${semId}'`);
@@ -56,7 +55,7 @@ const solveCaptcha = async (page) => {
 
 const checkForErrors = async (page) => {
   try {
-    const bodyText = await page.innerText("body", { timeout: 5000 });
+    const bodyText = await page.innerText("body");
     if (bodyText.includes("Invalid Captcha")) return "captcha";
     if (bodyText.includes("Invalid LoginId/Password")) return "login";
     if (bodyText.includes("Invalid credentials.")) return "credentials";
@@ -71,7 +70,7 @@ const getVtopData = async (username, password, semIndex = 0) => {
   const Alldata = {};
   let semId = null;
 
-  // Reuse the global browser instance by creating a new context per request
+  // Create a new context per request from the persistent browser instance
   const browser = await browserPromise;
   const context = await browser.newContext({
     userAgent: USER_AGENT_STRINGS[Math.floor(Math.random() * USER_AGENT_STRINGS.length)]
@@ -79,35 +78,35 @@ const getVtopData = async (username, password, semIndex = 0) => {
   const page = await context.newPage();
 
   try {
-    // Directly navigate to the prelogin URL to bypass extra navigation
+    // Directly navigate to the prelogin URL to bypass extra navigation steps
     await page.goto("https://vtop.vit.ac.in/vtop/prelogin/setup?_csrf=915d4b89-b5a2-4004-b733-bf07d64cc0f5&flag=VTOP", { waitUntil: "domcontentloaded" });
     console.log("Direct login page loaded");
 
-    // Wait for the captcha element immediately
-    await page.waitForSelector("#captchaStr", { state: "visible", timeout: 20000 });
+    // Wait for the captcha element to appear using default timeout
+    await page.waitForSelector("#captchaStr", { state: "visible" });
     console.log("Captcha detected, proceeding with login");
 
-    // Fill in the login details
+    // Fill in login details
     await page.fill("#username", username);
     await page.fill("#password", password);
 
     console.log("Solving Captcha...");
     await solveCaptcha(page);
     try {
-      await page.waitForLoadState("networkidle", { timeout: 30000 });
+      await page.waitForLoadState("networkidle");
     } catch (e) {
-      // Ignore network idle timeout if necessary
+      // Ignore if network idle state is not reached immediately
     }
 
     let errorType = await checkForErrors(page);
     if (errorType) {
       if (errorType === "captcha") {
         console.log("Invalid Captcha detected. Retrying captcha solver...");
-        const maxRetries = 5;
+        const maxRetries = 20;
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           await solveCaptcha(page);
           try {
-            await page.waitForLoadState("networkidle", { timeout: 30000 });
+            await page.waitForLoadState("networkidle");
           } catch (e) {}
           await new Promise(resolve => setTimeout(resolve, 500));
           errorType = await checkForErrors(page);
@@ -145,7 +144,7 @@ const getVtopData = async (username, password, semIndex = 0) => {
 
     console.log("Login successful. Proceeding to get data...");
 
-    // Execute the semester script and extract semester data
+    // Execute the semester script and extract data
     const semData = await executeJavascript(page, SEMESTER_SCRIPT);
     if (semData) {
       Alldata['semester'] = semData;
@@ -160,7 +159,7 @@ const getVtopData = async (username, password, semIndex = 0) => {
       console.log("Failed to get semester data.");
     }
 
-    // Execute each data extraction script and store results
+    // Execute data extraction scripts for each key
     for (const [key, script] of Object.entries(JS_SCRIPTS)) {
       const data = await executeJavascript(page, script, semId);
       if (data !== null) {
